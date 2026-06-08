@@ -1,0 +1,141 @@
+{
+  "package_no": "PKG-RESTORE-20260608102816",
+  "snapshot_time": "2026-06-08T10:30:03.239499",
+  "package_info": {
+    "id": 9,
+    "package_no": "PKG-RESTORE-20260608102816",
+    "template_id": 7,
+    "status": "issued",
+    "created_at": "2026-06-08T10:29:44.773664",
+    "issued_at": "2026-06-08T10:29:46.829733",
+    "synced_at": null,
+    "closed_at": null,
+    "operator": "恢复测试员",
+    "template": {
+      "name": "重启恢复测试模板",
+      "description": "用于测试重启后数据恢复的模板",
+      "id": 7,
+      "created_at": "2026-06-08T10:29:42.732300",
+      "updated_at": "2026-06-08T10:29:42.732304",
+      "check_items": [
+        {
+          "device_code": "DEV-RESTORE-001",
+          "item_name": "温度",
+          "unit": "°C",
+          "standard_value": "20-30",
+          "tolerance": null,
+          "id": 15,
+          "template_id": 7
+        },
+        {
+          "device_code": "DEV-RESTORE-001",
+          "item_name": "湿度",
+          "unit": "%RH",
+          "standard_value": "40-60",
+          "tolerance": null,
+          "id": 16,
+          "template_id": 7
+        },
+        {
+          "device_code": "DEV-RESTORE-002",
+          "item_name": "温度",
+          "unit": "°C",
+          "standard_value": "20-30",
+          "tolerance": null,
+          "id": 17,
+          "template_id": 7
+        },
+        {
+          "device_code": "DEV-RESTORE-002",
+          "item_name": "压力",
+          "unit": "MPa",
+          "standard_value": "0.5-1.5",
+          "tolerance": null,
+          "id": 18,
+          "template_id": 7
+        }
+      ]
+    }
+  },
+  "readings": [
+    {
+      "device_code": "DEV-RESTORE-001",
+      "item_name": "温度",
+      "reading_value": "28",
+      "collected_at": "2026-06-08T08:29:46.839745",
+      "source_type": "offline",
+      "id": 13,
+      "task_package_id": 9,
+      "uploaded_at": "2026-06-08T10:29:48.903798"
+    },
+    {
+      "device_code": "DEV-RESTORE-001",
+      "item_name": "湿度",
+      "reading_value": "50",
+      "collected_at": "2026-06-08T08:29:46.839745",
+      "source_type": "offline",
+      "id": 14,
+      "task_package_id": 9,
+      "uploaded_at": "2026-06-08T10:29:48.904715"
+    },
+    {
+      "device_code": "DEV-RESTORE-002",
+      "item_name": "温度",
+      "reading_value": "27",
+      "collected_at": "2026-06-08T08:29:46.839745",
+      "source_type": "offline",
+      "id": 15,
+      "task_package_id": 9,
+      "uploaded_at": "2026-06-08T10:29:48.905349"
+    },
+    {
+      "device_code": "DEV-RESTORE-002",
+      "item_name": "压力",
+      "reading_value": "1.0",
+      "collected_at": "2026-06-08T08:29:46.839745",
+      "source_type": "offline",
+      "id": 16,
+      "task_package_id": 9,
+      "uploaded_at": "2026-06-08T10:29:48.905909"
+    }
+  ],
+  "readings_count": 4,
+  "conflicts": [
+    {
+      "id": 11,
+      "task_package_id": 9,
+      "device_code": "DEV-RESTORE-002",
+      "item_name": "温度",
+      "existing_value": "27",
+      "new_value": "30",
+      "status": "open",
+      "resolution_note": null,
+      "created_at": "2026-06-08T10:29:55.051514",
+      "resolved_at": null,
+      "resolved_by": null
+    },
+    {
+      "id": 10,
+      "task_package_id": 9,
+      "device_code": "DEV-RESTORE-001",
+      "item_name": "温度",
+      "existing_value": "25",
+      "new_value": "28",
+      "status": "resolved",
+      "resolution_note": "重启测试-保留新值",
+      "created_at": "2026-06-08T10:29:50.960503",
+      "resolved_at": "2026-06-08T10:29:52.995339",
+      "resolved_by": "恢复测试员"
+    }
+  ],
+  "conflicts_count": 2,
+  "open_conflicts_count": 1,
+  "resolved_conflicts_count": 1,
+  "audit_logs_count": 2,
+  "expected_values": {
+    "DEV-RESTORE-001-温度": "28",
+    "DEV-RESTORE-001-湿度": "50",
+    "DEV-RESTORE-002-温度": "27",
+    "DEV-RESTORE-002-压力": "1.0"
+  }
+}

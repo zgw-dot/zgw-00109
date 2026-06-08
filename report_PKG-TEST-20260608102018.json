@@ -1,0 +1,79 @@
+{
+  "package_info": {
+    "package_no": "PKG-TEST-20260608102018",
+    "status": "closed",
+    "operator": "测试管理员",
+    "created_at": "2026-06-08T10:20:22.935788",
+    "issued_at": "2026-06-08T10:20:25.015064",
+    "synced_at": "2026-06-08T10:20:41.451565",
+    "closed_at": "2026-06-08T10:20:51.737773"
+  },
+  "template_info": {
+    "id": 1,
+    "name": "变压器日常巡检模板-测试",
+    "description": "用于测试的变压器巡检模板",
+    "check_items_count": 3
+  },
+  "readings": [
+    {
+      "id": 2,
+      "device_code": "TRANS-001",
+      "item_name": "油位",
+      "reading_value": "180",
+      "collected_at": "2026-06-08T09:20:27.075221",
+      "uploaded_at": "2026-06-08T10:20:29.131409",
+      "source_type": "offline"
+    },
+    {
+      "id": 1,
+      "device_code": "TRANS-001",
+      "item_name": "油温",
+      "reading_value": "85",
+      "collected_at": "2026-06-08T09:20:27.075221",
+      "uploaded_at": "2026-06-08T10:20:29.127300",
+      "source_type": "offline"
+    },
+    {
+      "id": 3,
+      "device_code": "TRANS-002",
+      "item_name": "油温",
+      "reading_value": "72",
+      "collected_at": "2026-06-08T09:20:27.075221",
+      "uploaded_at": "2026-06-08T10:20:29.133290",
+      "source_type": "offline"
+    }
+  ],
+  "conflicts": [
+    {
+      "id": 2,
+      "device_code": "TRANS-002",
+      "item_name": "油温",
+      "existing_value": "72",
+      "new_value": "90",
+      "status": "resolved",
+      "resolution_note": "synced状态冲突，保留原值",
+      "created_at": "2026-06-08T10:20:43.507552",
+      "resolved_at": "2026-06-08T10:20:49.679739",
+      "resolved_by": "测试管理员"
+    },
+    {
+      "id": 1,
+      "device_code": "TRANS-001",
+      "item_name": "油温",
+      "existing_value": "78",
+      "new_value": "85",
+      "status": "resolved",
+      "resolution_note": "现场核实，第二次读数更准确",
+      "created_at": "2026-06-08T10:20:31.178552",
+      "resolved_at": "2026-06-08T10:20:37.316907",
+      "resolved_by": "测试管理员"
+    }
+  ],
+  "summary": {
+    "total_readings": 3,
+    "total_conflicts": 2,
+    "open_conflicts": 0,
+    "resolved_conflicts": 2
+  },
+  "exported_at": "2026-06-08T10:20:55.918700"
+}
