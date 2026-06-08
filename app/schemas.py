@@ -50,7 +50,8 @@ class Template(TemplateBase):
 
 class TaskPackageBase(BaseModel):
     package_no: str = Field(..., max_length=100, description="任务包编号")
-    template_id: int = Field(..., description="模板ID")
+    template_id: Optional[int] = Field(None, description="模板ID（与template_name二选一）")
+    template_name: Optional[str] = Field(None, max_length=255, description="模板名称（与template_id二选一，用于同批引用新增模板）")
     operator: Optional[str] = Field(None, max_length=100, description="操作人员")
 
 

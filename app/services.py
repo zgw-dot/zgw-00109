@@ -146,10 +146,17 @@ def validate_task_package_fields(pkg_data: Dict[str, Any], row_index: int) -> Tu
     elif len(pkg_data["package_no"]) > 100:
         errors.append(f"第 {row_index} 行: 任务包编号长度不能超过100字符")
 
-    if not pkg_data.get("template_id"):
-        errors.append(f"第 {row_index} 行: 模板ID不能为空")
-    elif not isinstance(pkg_data["template_id"], int):
-        errors.append(f"第 {row_index} 行: 模板ID必须是整数")
+    template_id = pkg_data.get("template_id")
+    template_name = pkg_data.get("template_name")
+
+    if not template_id and not template_name:
+        errors.append(f"第 {row_index} 行: template_id 和 template_name 必须提供一个")
+    elif template_id and template_name:
+        errors.append(f"第 {row_index} 行: template_id 和 template_name 只能提供一个")
+    elif template_id is not None and not isinstance(template_id, int):
+        errors.append(f"第 {row_index} 行: template_id 必须是整数")
+    elif template_name is not None and not isinstance(template_name, str):
+        errors.append(f"第 {row_index} 行: template_name 必须是字符串")
 
     return len(errors) == 0, errors
 
@@ -379,7 +386,8 @@ def process_batch_import(
             continue
 
         package_no = pkg_data["package_no"]
-        template_id = pkg_data["template_id"]
+        template_id = pkg_data.get("template_id")
+        template_name = pkg_data.get("template_name")
 
         if package_no in package_no_set or package_no in batch_package_nos:
             failed_count += 1
@@ -393,7 +401,18 @@ def process_batch_import(
             ))
             continue
 
-        if template_id not in template_name_map.values():
+        resolved_template_id = None
+        template_ref_desc = ""
+        if template_id is not None:
+            if template_id in template_name_map.values():
+                resolved_template_id = template_id
+            template_ref_desc = f"模板ID {template_id}"
+        elif template_name is not None:
+            if template_name in template_name_map:
+                resolved_template_id = template_name_map[template_name]
+            template_ref_desc = f"模板名称 '{template_name}'"
+
+        if resolved_template_id is None:
             failed_count += 1
             results.append(schemas.ImportRecordResult(
                 row_index=row_index,
@@ -401,14 +420,14 @@ def process_batch_import(
                 record_type="task_package",
                 identifier=package_no,
                 message="模板不存在",
-                errors=[f"模板ID {template_id} 不存在，请先导入模板"]
+                errors=[f"{template_ref_desc} 不存在，请先导入模板或在本次导入中定义"]
             ))
             continue
 
         try:
             db_package = models.TaskPackage(
                 package_no=package_no,
-                template_id=template_id,
+                template_id=resolved_template_id,
                 import_batch_id=batch.id,
                 status="draft",
                 operator=pkg_data.get("operator") or operator
@@ -836,7 +855,8 @@ def precheck_batch_import(
             continue
 
         package_no = pkg_data["package_no"]
-        template_id = pkg_data["template_id"]
+        template_id = pkg_data.get("template_id")
+        template_name = pkg_data.get("template_name")
 
         if package_no in package_no_set or package_no in batch_package_nos:
             will_duplicate += 1
@@ -850,9 +870,16 @@ def precheck_batch_import(
             ))
             continue
 
-        if template_id not in template_name_map.values() and template_id not in [
-            template_name_map.get(name) for name in batch_template_names
-        ]:
+        template_exists = False
+        template_ref_desc = ""
+        if template_id is not None:
+            template_exists = template_id in template_name_map.values()
+            template_ref_desc = f"模板ID {template_id}"
+        elif template_name is not None:
+            template_exists = template_name in template_name_map or template_name in batch_template_names
+            template_ref_desc = f"模板名称 '{template_name}'"
+
+        if not template_exists:
             template_not_found += 1
             items.append(schemas.PreCheckItem(
                 row_index=row_index,
@@ -860,7 +887,7 @@ def precheck_batch_import(
                 identifier=package_no,
                 check_result="template_not_found",
                 message="模板不存在",
-                errors=[f"模板ID {template_id} 不存在，请先导入模板"]
+                errors=[f"{template_ref_desc} 不存在，请先导入模板或在本次导入中定义"]
             ))
             continue
 
