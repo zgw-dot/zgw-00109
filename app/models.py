@@ -18,6 +18,10 @@ class ImportBatch(Base):
     operator = Column(String(100), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     details = Column(Text, nullable=True)
+    is_revoked = Column(Integer, default=0)
+    revoked_at = Column(DateTime, nullable=True)
+    revoked_by = Column(String(100), nullable=True)
+    revocation_reason = Column(String(500), nullable=True)
 
     templates = relationship("InspectionTemplate", back_populates="import_batch")
     task_packages = relationship("TaskPackage", back_populates="import_batch")

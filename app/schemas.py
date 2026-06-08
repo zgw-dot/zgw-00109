@@ -170,6 +170,10 @@ class ImportBatchBase(BaseModel):
     status: str
     operator: Optional[str] = None
     created_at: datetime
+    is_revoked: int = 0
+    revoked_at: Optional[datetime] = None
+    revoked_by: Optional[str] = None
+    revocation_reason: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -253,3 +257,51 @@ class AuditLog(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class PreCheckItem(BaseModel):
+    row_index: int
+    record_type: str
+    identifier: str
+    check_result: str
+    message: str
+    errors: List[str] = []
+
+
+class BatchPreCheckResponse(BaseModel):
+    success: bool
+    message: str
+    batch_no: str
+    total_records: int
+    will_add: int
+    will_duplicate: int
+    missing_fields: int
+    template_not_found: int
+    items: List[PreCheckItem] = []
+
+
+class BatchRevokeRequest(BaseModel):
+    reason: Optional[str] = Field(None, max_length=500, description="撤销原因")
+
+
+class BatchRevokeResponse(BaseModel):
+    success: bool
+    message: str
+    batch_no: str
+    revoked_templates: int
+    revoked_packages: int
+    operator: Optional[str] = None
+    revoked_at: datetime
+
+
+class BatchRevokeValidationResult(BaseModel):
+    allowed: bool
+    batch_no: str
+    reason: str
+    templates_count: int
+    packages_count: int
+    issued_packages: int
+    synced_packages: int
+    open_conflicts: int
+    is_revoked: bool
+    blocking_issues: List[str] = []

@@ -13,6 +13,124 @@ router = APIRouter(
 )
 
 
+@router.post("/precheck/json", response_model=schemas.BatchPreCheckResponse)
+def batch_precheck_json(
+    import_data: schemas.BatchImportJson,
+    db: Session = Depends(get_db)
+):
+    templates_data = [t.model_dump() for t in import_data.templates]
+    packages_data = [p.model_dump() for p in import_data.task_packages]
+
+    result = services.precheck_batch_import(
+        db=db,
+        templates_data=templates_data,
+        packages_data=packages_data,
+        source_type="json",
+        operator=import_data.operator
+    )
+
+    services.log_audit(
+        db,
+        action="batch_precheck",
+        entity_type="batch",
+        entity_id=0,
+        details={
+            "batch_no": result.batch_no,
+            "total_records": result.total_records,
+            "will_add": result.will_add,
+            "will_duplicate": result.will_duplicate,
+            "missing_fields": result.missing_fields,
+            "template_not_found": result.template_not_found,
+            "source_type": "json"
+        },
+        operator=import_data.operator,
+        batch_no=result.batch_no
+    )
+    db.commit()
+
+    return result
+
+
+@router.post("/precheck/csv", response_model=schemas.BatchPreCheckResponse)
+async def batch_precheck_csv(
+    file: UploadFile = File(...),
+    operator: Optional[str] = Query(None, description="操作人员"),
+    db: Session = Depends(get_db)
+):
+    if not file.filename or not file.filename.lower().endswith('.csv'):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="只支持 CSV 格式文件"
+        )
+
+    try:
+        content = await file.read()
+        content_str = content.decode('utf-8-sig')
+    except UnicodeDecodeError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="文件编码错误，请使用 UTF-8 编码"
+        )
+
+    templates_data, packages_data, parse_errors = services.parse_csv_data(content_str)
+
+    batch_no = services.generate_batch_no()
+
+    if parse_errors:
+        items = []
+        for i, err in enumerate(parse_errors):
+            items.append(schemas.PreCheckItem(
+                row_index=i+1,
+                record_type="parse_error",
+                identifier="csv_parse",
+                check_result="missing_fields",
+                message="解析错误",
+                errors=[err]
+            ))
+
+        result = schemas.BatchPreCheckResponse(
+            success=False,
+            message="CSV 解析失败",
+            batch_no=batch_no,
+            total_records=0,
+            will_add=0,
+            will_duplicate=0,
+            missing_fields=len(parse_errors),
+            template_not_found=0,
+            items=items
+        )
+    else:
+        result = services.precheck_batch_import(
+            db=db,
+            templates_data=templates_data,
+            packages_data=packages_data,
+            source_type="csv",
+            operator=operator
+        )
+
+    services.log_audit(
+        db,
+        action="batch_precheck",
+        entity_type="batch",
+        entity_id=0,
+        details={
+            "batch_no": result.batch_no,
+            "total_records": result.total_records,
+            "will_add": result.will_add,
+            "will_duplicate": result.will_duplicate,
+            "missing_fields": result.missing_fields,
+            "template_not_found": result.template_not_found,
+            "source_type": "csv",
+            "source_filename": file.filename
+        },
+        operator=operator,
+        batch_no=result.batch_no
+    )
+    db.commit()
+
+    return result
+
+
 @router.post("/import/json", response_model=schemas.BatchImportResponse)
 def batch_import_json(
     import_data: schemas.BatchImportJson,
@@ -89,11 +207,50 @@ async def batch_import_csv(
     return result
 
 
+@router.get("/revoke/batch/validate/{batch_no}", response_model=schemas.BatchRevokeValidationResult)
+def validate_revoke_batch(
+    batch_no: str,
+    db: Session = Depends(get_db)
+):
+    result = services.validate_before_revoke_batch(db, batch_no)
+    return result
+
+
+@router.post("/revoke/batch/{batch_no}", response_model=schemas.BatchRevokeResponse)
+def revoke_batch(
+    batch_no: str,
+    request: schemas.BatchRevokeRequest,
+    operator: Optional[str] = Query(None, description="操作人员"),
+    db: Session = Depends(get_db)
+):
+    validation = services.validate_before_revoke_batch(db, batch_no)
+    if not validation.allowed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="; ".join(validation.blocking_issues)
+        )
+
+    try:
+        result = services.revoke_batch_import(
+            db=db,
+            batch_no=batch_no,
+            reason=request.reason,
+            operator=operator
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+
 @router.get("/export", response_model=schemas.BatchExportResponse)
 def batch_export(
     batch_no: Optional[str] = Query(None, description="按导入批次过滤"),
     entity_type: Optional[str] = Query(None, description="按实体类型过滤: template/task_package"),
     operator: Optional[str] = Query(None, description="按操作人员过滤"),
+    exclude_revoked: Optional[bool] = Query(True, description="是否排除已撤销批次"),
     db: Session = Depends(get_db)
 ):
     if entity_type and entity_type not in ["template", "task_package"]:
@@ -102,7 +259,7 @@ def batch_export(
             detail="entity_type 只能是 'template' 或 'task_package'"
         )
 
-    result = services.get_batch_export(db, batch_no, entity_type, operator)
+    result = services.get_batch_export(db, batch_no, entity_type, operator, exclude_revoked)
 
     services.log_audit(
         db,
@@ -113,6 +270,7 @@ def batch_export(
             "batch_no": batch_no,
             "entity_type": entity_type,
             "operator_filter": operator,
+            "exclude_revoked": exclude_revoked,
             "export_count": result.export_count
         },
         operator=operator,
@@ -250,11 +408,14 @@ def list_batches(
     skip: int = 0,
     limit: int = 100,
     operator: Optional[str] = Query(None, description="按操作人员过滤"),
+    exclude_revoked: Optional[bool] = Query(True, description="是否排除已撤销批次"),
     db: Session = Depends(get_db)
 ):
     query = db.query(models.ImportBatch)
     if operator:
         query = query.filter(models.ImportBatch.operator == operator)
+    if exclude_revoked:
+        query = query.filter(models.ImportBatch.is_revoked == 0)
     batches = query.order_by(models.ImportBatch.created_at.desc()).offset(skip).limit(limit).all()
     return batches
 

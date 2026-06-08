@@ -1,0 +1,5 @@
+record_type,template_name,description,check_items,package_no,template_id,operator
+template,预检撤销测试-变压器-V1,预检撤销测试模板1,"[{""device_code"":""DEV-PRE-001"",""item_name"":""油温"",""unit"":""°C"",""standard_value"":""≤85"",""tolerance"":""±5""}]",,,测试管理员-预检
+template,预检撤销测试-开关柜-V1,预检撤销测试模板2,"[{""device_code"":""DEV-PRE-002"",""item_name"":""温度"",""unit"":""°C"",""standard_value"":""≤65"",""tolerance"":""±3""}]",,,测试管理员-预检
+task_package,,,,"PKG-PREVOKE-001",99999,测试管理员-预检
+task_package,,,,"PKG-PREVOKE-002",99999,测试管理员-预检

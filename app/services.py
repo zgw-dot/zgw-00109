@@ -643,7 +643,8 @@ def get_batch_export(
     db: Session,
     batch_no: str = None,
     entity_type: str = None,
-    operator: str = None
+    operator: str = None,
+    exclude_revoked: bool = True
 ) -> schemas.BatchExportResponse:
     items: List[schemas.BatchExportItem] = []
 
@@ -655,12 +656,18 @@ def get_batch_export(
             )
         if operator:
             query = query.filter(models.TaskPackage.operator == operator)
+        if exclude_revoked:
+            query = query.join(models.ImportBatch).filter(
+                models.ImportBatch.is_revoked == 0
+            )
 
         packages = query.all()
         for pkg in packages:
             batch_info = None
             batch_no_val = None
             if pkg.import_batch:
+                if exclude_revoked and pkg.import_batch.is_revoked:
+                    continue
                 batch_info = schemas.ImportBatchBase.model_validate(pkg.import_batch)
                 batch_no_val = pkg.import_batch.batch_no
 
@@ -693,12 +700,18 @@ def get_batch_export(
             query = query.join(models.ImportBatch).filter(
                 models.ImportBatch.batch_no == batch_no
             )
+        if exclude_revoked:
+            query = query.join(models.ImportBatch).filter(
+                models.ImportBatch.is_revoked == 0
+            )
 
         templates = query.all()
         for tpl in templates:
             batch_info = None
             batch_no_val = None
             if tpl.import_batch:
+                if exclude_revoked and tpl.import_batch.is_revoked:
+                    continue
                 batch_info = schemas.ImportBatchBase.model_validate(tpl.import_batch)
                 batch_no_val = tpl.import_batch.batch_no
 
@@ -735,4 +748,333 @@ def get_batch_export(
         message=f"导出成功，共 {len(items)} 条记录",
         export_count=len(items),
         items=items
+    )
+
+
+def precheck_batch_import(
+    db: Session,
+    templates_data: List[Dict],
+    packages_data: List[Dict],
+    source_type: str,
+    operator: str = None
+) -> schemas.BatchPreCheckResponse:
+    batch_no = generate_batch_no()
+    total_records = len(templates_data) + len(packages_data)
+
+    items: List[schemas.PreCheckItem] = []
+    will_add = 0
+    will_duplicate = 0
+    missing_fields = 0
+    template_not_found = 0
+    row_index = 1
+
+    template_name_map: Dict[str, int] = {}
+    for t in db.query(models.InspectionTemplate).all():
+        template_name_map[t.name] = t.id
+
+    package_no_set = set()
+    for p in db.query(models.TaskPackage).all():
+        package_no_set.add(p.package_no)
+
+    batch_template_names = set()
+    batch_package_nos = set()
+
+    for template_data in templates_data:
+        row_index += 1
+        is_valid, field_errors = validate_template_fields(template_data, row_index)
+
+        if not is_valid:
+            missing_fields += 1
+            items.append(schemas.PreCheckItem(
+                row_index=row_index,
+                record_type="template",
+                identifier=template_data.get("name", "unknown"),
+                check_result="missing_fields",
+                message="字段缺失或格式错误",
+                errors=field_errors
+            ))
+            continue
+
+        name = template_data["name"]
+        if name in template_name_map or name in batch_template_names:
+            will_duplicate += 1
+            items.append(schemas.PreCheckItem(
+                row_index=row_index,
+                record_type="template",
+                identifier=name,
+                check_result="duplicate",
+                message="模板名称重复",
+                errors=[f"模板名称 '{name}' 已存在或在本次导入中重复"]
+            ))
+            continue
+
+        will_add += 1
+        batch_template_names.add(name)
+        items.append(schemas.PreCheckItem(
+            row_index=row_index,
+            record_type="template",
+            identifier=name,
+            check_result="will_add",
+            message="将新增模板",
+            errors=[]
+        ))
+
+    for pkg_data in packages_data:
+        row_index += 1
+        is_valid, field_errors = validate_task_package_fields(pkg_data, row_index)
+
+        if not is_valid:
+            missing_fields += 1
+            items.append(schemas.PreCheckItem(
+                row_index=row_index,
+                record_type="task_package",
+                identifier=pkg_data.get("package_no", "unknown"),
+                check_result="missing_fields",
+                message="字段缺失或格式错误",
+                errors=field_errors
+            ))
+            continue
+
+        package_no = pkg_data["package_no"]
+        template_id = pkg_data["template_id"]
+
+        if package_no in package_no_set or package_no in batch_package_nos:
+            will_duplicate += 1
+            items.append(schemas.PreCheckItem(
+                row_index=row_index,
+                record_type="task_package",
+                identifier=package_no,
+                check_result="duplicate",
+                message="任务包编号重复",
+                errors=[f"任务包编号 '{package_no}' 已存在或在本次导入中重复"]
+            ))
+            continue
+
+        if template_id not in template_name_map.values() and template_id not in [
+            template_name_map.get(name) for name in batch_template_names
+        ]:
+            template_not_found += 1
+            items.append(schemas.PreCheckItem(
+                row_index=row_index,
+                record_type="task_package",
+                identifier=package_no,
+                check_result="template_not_found",
+                message="模板不存在",
+                errors=[f"模板ID {template_id} 不存在，请先导入模板"]
+            ))
+            continue
+
+        will_add += 1
+        batch_package_nos.add(package_no)
+        items.append(schemas.PreCheckItem(
+            row_index=row_index,
+            record_type="task_package",
+            identifier=package_no,
+            check_result="will_add",
+            message="将新增任务包",
+            errors=[]
+        ))
+
+    all_ok = will_duplicate == 0 and missing_fields == 0 and template_not_found == 0
+    message = f"预检完成: 将新增 {will_add} 条"
+    if will_duplicate > 0:
+        message += f"，重复 {will_duplicate} 条"
+    if missing_fields > 0:
+        message += f"，字段缺失 {missing_fields} 条"
+    if template_not_found > 0:
+        message += f"，模板不存在 {template_not_found} 条"
+
+    return schemas.BatchPreCheckResponse(
+        success=all_ok,
+        message=message,
+        batch_no=batch_no,
+        total_records=total_records,
+        will_add=will_add,
+        will_duplicate=will_duplicate,
+        missing_fields=missing_fields,
+        template_not_found=template_not_found,
+        items=items
+    )
+
+
+def validate_before_revoke_batch(
+    db: Session,
+    batch_no: str
+) -> schemas.BatchRevokeValidationResult:
+    batch = db.query(models.ImportBatch).filter(
+        models.ImportBatch.batch_no == batch_no
+    ).first()
+
+    if not batch:
+        return schemas.BatchRevokeValidationResult(
+            allowed=False,
+            batch_no=batch_no,
+            reason="批次不存在",
+            templates_count=0,
+            packages_count=0,
+            issued_packages=0,
+            synced_packages=0,
+            open_conflicts=0,
+            is_revoked=False,
+            blocking_issues=[f"批次编号 '{batch_no}' 不存在"]
+        )
+
+    if batch.is_revoked:
+        return schemas.BatchRevokeValidationResult(
+            allowed=False,
+            batch_no=batch_no,
+            reason="批次已撤销",
+            templates_count=len(batch.templates),
+            packages_count=len(batch.task_packages),
+            issued_packages=0,
+            synced_packages=0,
+            open_conflicts=0,
+            is_revoked=True,
+            blocking_issues=[f"批次 '{batch_no}' 已被撤销，撤销时间: {batch.revoked_at}，撤销人: {batch.revoked_by}"]
+        )
+
+    templates_count = len(batch.templates)
+    packages_count = len(batch.task_packages)
+    issued_packages = 0
+    synced_packages = 0
+    open_conflicts = 0
+    blocking_issues = []
+
+    for pkg in batch.task_packages:
+        if pkg.status == "issued":
+            issued_packages += 1
+        elif pkg.status == "synced":
+            synced_packages += 1
+        elif pkg.status == "closed":
+            blocking_issues.append(f"任务包 '{pkg.package_no}' 已关闭，无法撤销")
+
+        pkg_open_conflicts = db.query(models.Conflict).filter(
+            models.Conflict.task_package_id == pkg.id,
+            models.Conflict.status == "open"
+        ).count()
+        open_conflicts += pkg_open_conflicts
+
+    if issued_packages > 0:
+        blocking_issues.append(f"有 {issued_packages} 个任务包已发放，无法撤销")
+
+    if synced_packages > 0:
+        blocking_issues.append(f"有 {synced_packages} 个任务包已同步读数，无法撤销")
+
+    if open_conflicts > 0:
+        blocking_issues.append(f"有 {open_conflicts} 个未解决的冲突，无法撤销")
+
+    for tpl in batch.templates:
+        other_packages = db.query(models.TaskPackage).filter(
+            models.TaskPackage.template_id == tpl.id,
+            models.TaskPackage.import_batch_id != batch.id
+        ).count()
+        if other_packages > 0:
+            blocking_issues.append(f"模板 '{tpl.name}' 被其他批次的 {other_packages} 个任务包引用，无法撤销")
+
+    allowed = len(blocking_issues) == 0
+
+    if allowed:
+        reason = "可以撤销，所有任务包均为草稿状态且无未解决冲突"
+    else:
+        reason = "无法撤销，存在以下问题"
+
+    return schemas.BatchRevokeValidationResult(
+        allowed=allowed,
+        batch_no=batch_no,
+        reason=reason,
+        templates_count=templates_count,
+        packages_count=packages_count,
+        issued_packages=issued_packages,
+        synced_packages=synced_packages,
+        open_conflicts=open_conflicts,
+        is_revoked=False,
+        blocking_issues=blocking_issues
+    )
+
+
+def revoke_batch_import(
+    db: Session,
+    batch_no: str,
+    reason: str = None,
+    operator: str = None
+) -> schemas.BatchRevokeResponse:
+    validation = validate_before_revoke_batch(db, batch_no)
+    if not validation.allowed:
+        raise Exception("; ".join(validation.blocking_issues))
+
+    batch = db.query(models.ImportBatch).filter(
+        models.ImportBatch.batch_no == batch_no
+    ).first()
+
+    revoked_templates = 0
+    revoked_packages = 0
+
+    template_ids_to_delete = []
+    for tpl in batch.templates:
+        template_ids_to_delete.append(tpl.id)
+
+    for pkg in batch.task_packages:
+        log_audit(
+            db,
+            action="revoke_task_package",
+            entity_type="task_package",
+            entity_id=pkg.id,
+            details={
+                "package_no": pkg.package_no,
+                "batch_no": batch_no,
+                "status_before_revoke": pkg.status
+            },
+            operator=operator,
+            batch_no=batch_no
+        )
+        db.delete(pkg)
+        revoked_packages += 1
+
+    for tpl in batch.templates:
+        log_audit(
+            db,
+            action="revoke_template",
+            entity_type="template",
+            entity_id=tpl.id,
+            details={
+                "template_name": tpl.name,
+                "batch_no": batch_no
+            },
+            operator=operator,
+            batch_no=batch_no
+        )
+        db.delete(tpl)
+        revoked_templates += 1
+
+    batch.is_revoked = 1
+    batch.revoked_at = datetime.now()
+    batch.revoked_by = operator
+    batch.revocation_reason = reason
+    batch.status = "revoked"
+
+    log_audit(
+        db,
+        action="batch_revoke",
+        entity_type="batch",
+        entity_id=batch.id,
+        details={
+            "batch_no": batch_no,
+            "revoked_templates": revoked_templates,
+            "revoked_packages": revoked_packages,
+            "reason": reason
+        },
+        operator=operator,
+        batch_no=batch_no
+    )
+
+    db.commit()
+
+    return schemas.BatchRevokeResponse(
+        success=True,
+        message=f"批次 '{batch_no}' 已成功撤销，删除 {revoked_templates} 个模板和 {revoked_packages} 个任务包",
+        batch_no=batch_no,
+        revoked_templates=revoked_templates,
+        revoked_packages=revoked_packages,
+        operator=operator,
+        revoked_at=batch.revoked_at
     )

@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 
 from ..database import get_db
 from .. import models, schemas, services
@@ -15,6 +15,7 @@ router = APIRouter(
 @router.post("/upload", response_model=schemas.UploadResponse)
 def upload_readings(
     upload_data: schemas.ReadingUpload,
+    operator: Optional[str] = Query(None, description="操作人员"),
     db: Session = Depends(get_db)
 ):
     package_no = upload_data.package_no
@@ -93,7 +94,8 @@ def upload_readings(
                     "item_name": reading_data.item_name,
                     "existing_value": existing_reading.reading_value,
                     "new_value": reading_data.reading_value
-                }
+                },
+                operator=operator
             )
         else:
             new_reading = models.Reading(
@@ -117,7 +119,8 @@ def upload_readings(
                     "device_code": reading_data.device_code,
                     "item_name": reading_data.item_name,
                     "reading_value": reading_data.reading_value
-                }
+                },
+                operator=operator
             )
 
     db.commit()
