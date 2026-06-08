@@ -1,8 +1,10 @@
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from datetime import datetime
 import json
 import csv
 import io
+import time
 from typing import List, Tuple, Dict, Any
 from . import models, schemas
 
@@ -101,8 +103,20 @@ def validate_package_status(
     return package, None
 
 
+_batch_counter = 0
+_last_batch_time = ""
+
+
 def generate_batch_no() -> str:
-    return f"BATCH-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    global _batch_counter, _last_batch_time
+    now = datetime.now()
+    time_part = now.strftime('%Y%m%d%H%M%S%f')[:17]
+    if time_part == _last_batch_time:
+        _batch_counter += 1
+    else:
+        _batch_counter = 1
+        _last_batch_time = time_part
+    return f"BATCH-{time_part}-{_batch_counter:02d}"
 
 
 def validate_template_fields(template_data: Dict[str, Any], row_index: int) -> Tuple[bool, List[str]]:
@@ -163,19 +177,29 @@ def create_import_batch(
     source_type: str,
     source_filename: str = None,
     total_records: int = 0,
-    operator: str = None
+    operator: str = None,
+    max_retries: int = 5
 ) -> models.ImportBatch:
-    batch = models.ImportBatch(
-        batch_no=generate_batch_no(),
-        source_type=source_type,
-        source_filename=source_filename,
-        total_records=total_records,
-        operator=operator,
-        status="processing"
-    )
-    db.add(batch)
-    db.flush()
-    return batch
+    for attempt in range(max_retries):
+        try:
+            batch = models.ImportBatch(
+                batch_no=generate_batch_no(),
+                source_type=source_type,
+                source_filename=source_filename,
+                total_records=total_records,
+                operator=operator,
+                status="processing"
+            )
+            db.add(batch)
+            db.flush()
+            return batch
+        except IntegrityError as e:
+            if "UNIQUE constraint failed: import_batches.batch_no" in str(e) or "Duplicate entry" in str(e):
+                db.rollback()
+                time.sleep(0.01 * (attempt + 1))
+                continue
+            raise
+    raise Exception(f"无法生成唯一批次号，已重试 {max_retries} 次")
 
 
 def parse_csv_data(content: str) -> Tuple[List[Dict], List[Dict], List[str]]:
