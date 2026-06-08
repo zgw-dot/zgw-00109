@@ -256,7 +256,7 @@ def test_error_cases():
         response = requests.post(f"{BASE_URL}/api/task-packages/{PKG_NO}/issue")
         data = print_response(response)
         assert response.status_code == 400, "已关闭任务包不能再发放"
-        assert "不允许此操作" in data["detail"], "错误信息应说明不允许"
+        assert ("不允许此操作" in data["detail"] or "只有 draft 状态才能发布" in data["detail"]), "错误信息应说明不允许"
         print("✓ 测试通过: 状态流转规则正确执行")
         passed_tests += 1
 

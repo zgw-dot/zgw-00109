@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import engine, Base
-from app.routers import templates, task_packages, readings, conflicts, audit, reports
+from app.routers import templates, task_packages, readings, conflicts, audit, reports, batch
 
 Base.metadata.create_all(bind=engine)
 
@@ -28,6 +28,7 @@ app.include_router(readings.router)
 app.include_router(conflicts.router)
 app.include_router(audit.router)
 app.include_router(reports.router)
+app.include_router(batch.router)
 
 
 @app.get("/", tags=["系统"])
@@ -43,7 +44,8 @@ def root():
             "/api/readings",
             "/api/conflicts",
             "/api/audit-logs",
-            "/api/reports"
+            "/api/reports",
+            "/api/batch"
         ]
     }
 

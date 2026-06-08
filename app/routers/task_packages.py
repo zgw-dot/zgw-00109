@@ -93,6 +93,13 @@ def issue_task_package(
     operator: Optional[str] = Query(None, description="操作人员"),
     db: Session = Depends(get_db)
 ):
+    validation = services.validate_before_publish(db, package_no)
+    if not validation.valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="发布前校验失败: " + "; ".join(validation.errors)
+        )
+
     package, error = services.validate_package_status(db, package_no, ["draft"])
     if error:
         raise HTTPException(
@@ -117,7 +124,8 @@ def issue_task_package(
         details={
             "package_no": package_no,
             "old_status": old_status,
-            "new_status": "issued"
+            "new_status": "issued",
+            "validation_passed": True
         },
         operator=operator or package.operator
     )
@@ -255,6 +263,13 @@ def rollback_to_draft(
     operator: Optional[str] = Query(None, description="操作人员"),
     db: Session = Depends(get_db)
 ):
+    validation = services.validate_before_revoke(db, package_no)
+    if not validation.allowed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=validation.message
+        )
+
     package, error = services.validate_package_status(db, package_no, ["issued"])
     if error:
         raise HTTPException(
@@ -277,7 +292,8 @@ def rollback_to_draft(
         details={
             "package_no": package_no,
             "old_status": old_status,
-            "new_status": "draft"
+            "new_status": "draft",
+            "readings_count": validation.readings_count
         },
         operator=operator or package.operator
     )

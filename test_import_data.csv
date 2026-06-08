@@ -1,0 +1,5 @@
+record_type,template_name,description,check_items,package_no,template_id,operator
+template,批量导入模板-变压器巡检,用于批量导入测试的变压器巡检模板,"[{""device_code"":""DEV-001"",""item_name"":"油温","unit":"°C","standard_value":"≤85","tolerance":"±5"},{"device_code":"DEV-001","item_name":"油位","unit":"mm","standard_value":"150-250","tolerance":"±10"}]",,,
+template,批量导入模板-开关柜巡检,用于批量导入测试的开关柜巡检模板,"[{""device_code"":""SW-001"",""item_name"":"温度","unit":"°C","standard_value":"≤65","tolerance":"±3"}]",,,
+task_package,,,PKG-BATCH-001,1,批量管理员
+task_package,,,PKG-BATCH-002,2,批量管理员

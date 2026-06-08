@@ -18,6 +18,7 @@ def list_audit_logs(
     entity_type: Optional[str] = Query(None, description="按实体类型过滤"),
     entity_id: Optional[int] = Query(None, description="按实体ID过滤"),
     operator: Optional[str] = Query(None, description="按操作人员过滤"),
+    batch_no: Optional[str] = Query(None, description="按导入批次过滤"),
     skip: int = 0,
     limit: int = 200,
     db: Session = Depends(get_db)
@@ -31,6 +32,8 @@ def list_audit_logs(
         query = query.filter(models.AuditLog.entity_id == entity_id)
     if operator:
         query = query.filter(models.AuditLog.operator == operator)
+    if batch_no:
+        query = query.filter(models.AuditLog.batch_no == batch_no)
 
     logs = query.order_by(models.AuditLog.created_at.desc()).offset(skip).limit(limit).all()
     return logs

@@ -1,6 +1,6 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 
 class CheckItemBase(BaseModel):
@@ -157,3 +157,99 @@ class StatusChangeResponse(BaseModel):
     package_no: str
     old_status: str
     new_status: str
+
+
+class ImportBatchBase(BaseModel):
+    id: int
+    batch_no: str
+    source_type: str
+    source_filename: Optional[str] = None
+    total_records: int
+    success_count: int
+    failed_count: int
+    status: str
+    operator: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ImportRecordResult(BaseModel):
+    row_index: int
+    success: bool
+    record_type: str
+    identifier: str
+    message: str
+    errors: List[str] = []
+
+
+class BatchImportResponse(BaseModel):
+    success: bool
+    message: str
+    batch_no: str
+    total_records: int
+    success_count: int
+    failed_count: int
+    results: List[ImportRecordResult] = []
+
+
+class BatchImportJson(BaseModel):
+    templates: List[TemplateCreate] = []
+    task_packages: List[TaskPackageBase] = []
+    operator: Optional[str] = Field(None, max_length=100, description="操作人员")
+
+
+class PublishValidationRequest(BaseModel):
+    package_no: str
+
+
+class PublishValidationResult(BaseModel):
+    valid: bool
+    package_no: str
+    errors: List[str] = []
+    warnings: List[str] = []
+
+
+class RevokeValidationResult(BaseModel):
+    allowed: bool
+    package_no: str
+    current_status: str
+    readings_count: int
+    message: str
+
+
+class ReadingSummary(BaseModel):
+    total_readings: int
+    total_conflicts: int
+    open_conflicts: int
+    resolved_conflicts: int
+
+
+class BatchExportItem(BaseModel):
+    batch_no: Optional[str] = None
+    import_batch: Optional[ImportBatchBase] = None
+    current_status: str
+    reading_summary: Optional[ReadingSummary] = None
+    data: Dict[str, Any]
+
+
+class BatchExportResponse(BaseModel):
+    success: bool
+    message: str
+    export_count: int
+    items: List[BatchExportItem] = []
+
+
+class AuditLog(BaseModel):
+    id: int
+    action: str
+    entity_type: str
+    entity_id: int
+    batch_no: Optional[str] = None
+    details: Optional[str] = None
+    created_at: datetime
+    operator: Optional[str] = None
+
+    class Config:
+        from_attributes = True

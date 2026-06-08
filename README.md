@@ -8,9 +8,13 @@
 - **任务包生命周期**：草稿 → 已发放 → 已同步 → 已关闭 的完整状态流转
 - **读数上传**：支持离线采集后批量上传读数
 - **冲突检测与解决**：自动检测同一设备同一检查项的读数冲突，支持手动解决
-- **审计日志**：完整记录所有关键操作
+- **审计日志**：完整记录所有关键操作，支持按操作人和批次查询
 - **报告导出**：支持 JSON 和 Excel 格式导出巡检报告
 - **数据持久化**：基于 SQLite，重启后数据不丢失
+- **批量导入管理**：支持 CSV 和 JSON 批量导入模板和任务包草稿，含字段校验和重复检测
+- **批量导出管理**：支持按批次、操作人、实体类型导出，包含批次信息、当前状态和读数摘要
+- **发布前校验**：发布前自动检查模板存在、检查项完整、任务包号未占用
+- **撤回发布控制**：仅已发放且未同步读数的任务包可撤回，已同步/已关闭状态不可撤回
 
 ## 快速开始
 
@@ -268,6 +272,9 @@ curl "http://localhost:8000/api/audit-logs?action=reading_uploaded"
 
 # 按操作人员过滤
 curl "http://localhost:8000/api/audit-logs?operator=管理员"
+
+# 按导入批次过滤
+curl "http://localhost:8000/api/audit-logs?batch_no=BATCH-20240101120000"
 ```
 
 ### 6. 报告导出
@@ -281,6 +288,149 @@ curl -O "http://localhost:8000/api/reports/PKG-2024-001/json"
 ```bash
 curl -O "http://localhost:8000/api/reports/PKG-2024-001/excel"
 ```
+
+### 7. 批量管理
+
+#### JSON 批量导入模板和任务包
+```bash
+curl -X POST "http://localhost:8000/api/batch/import/json" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "templates": [
+      {
+        "name": "批量导入变压器模板",
+        "description": "批量导入的变压器巡检模板",
+        "check_items": [
+          {"device_code": "TRANS-001", "item_name": "油温", "unit": "°C", "standard_value": "≤85", "tolerance": "±5"}
+        ]
+      }
+    ],
+    "task_packages": [
+      {
+        "package_no": "PKG-BATCH-001",
+        "template_id": 1,
+        "operator": "批量管理员"
+      }
+    ],
+    "operator": "批量管理员"
+  }'
+```
+
+#### CSV 批量导入
+```bash
+curl -X POST "http://localhost:8000/api/batch/import/csv?operator=批量管理员" \
+  -F "file=@import_data.csv"
+```
+
+**CSV 格式示例**：
+```csv
+record_type,template_name,description,check_items,package_no,template_id,operator
+template,变压器模板,变压器巡检模板,"[{""device_code"":""TRANS-001"",""item_name"":"油温","unit":"°C"}]",,,
+task_package,,,,PKG-BATCH-001,1,批量管理员
+```
+
+#### 发布前校验
+```bash
+# 校验任务包是否可发布
+curl "http://localhost:8000/api/batch/validate-publish/PKG-BATCH-001"
+```
+
+#### 发布任务包（含校验）
+```bash
+curl -X POST "http://localhost:8000/api/batch/publish/PKG-BATCH-001?operator=发布管理员"
+```
+
+#### 撤回前校验
+```bash
+# 校验任务包是否可撤回
+curl "http://localhost:8000/api/batch/validate-revoke/PKG-BATCH-001"
+```
+
+#### 撤回任务包（含校验）
+```bash
+curl -X POST "http://localhost:8000/api/batch/revoke/PKG-BATCH-001?operator=撤回管理员"
+```
+
+#### 批量导出
+```bash
+# 按批次导出
+curl "http://localhost:8000/api/batch/export?batch_no=BATCH-20240101120000"
+
+# 按操作人导出
+curl "http://localhost:8000/api/batch/export?operator=批量管理员"
+
+# 按实体类型导出（template/task_package）
+curl "http://localhost:8000/api/batch/export?entity_type=task_package"
+```
+
+#### 查询导入批次列表
+```bash
+curl "http://localhost:8000/api/batch/batches"
+```
+
+#### 查询批次详情
+```bash
+curl "http://localhost:8000/api/batch/batches/BATCH-20240101120000"
+```
+
+### 8. 发布与撤回权限说明
+
+#### 发布前校验项
+1. 任务包必须存在
+2. 任务包状态必须是 `draft`（草稿）
+3. 关联的模板必须存在
+4. 模板必须包含至少一个检查项
+5. 任务包编号不能被其他任务包占用
+
+#### 撤回权限限制
+| 任务包状态 | 读数数量 | 是否可撤回 | 说明 |
+|-----------|---------|-----------|------|
+| draft | 0 | ❌ 否 | 已经是草稿状态 |
+| issued | 0 | ✅ 是 | 已发放但未上传读数 |
+| issued | ≥1 | ❌ 否 | 已上传读数，不能撤回 |
+| synced | ≥1 | ❌ 否 | 已同步完成 |
+| closed | ≥0 | ❌ 否 | 已关闭归档 |
+
+### 9. 导入结果说明
+
+批量导入返回详细的每条记录处理结果：
+```json
+{
+  "success": false,
+  "message": "批量导入完成: 成功 2 条，失败 2 条",
+  "batch_no": "BATCH-20240101120000",
+  "total_records": 4,
+  "success_count": 2,
+  "failed_count": 2,
+  "results": [
+    {
+      "row_index": 2,
+      "success": true,
+      "record_type": "template",
+      "identifier": "变压器模板",
+      "message": "导入成功，模板ID: 1",
+      "errors": []
+    },
+    {
+      "row_index": 4,
+      "success": false,
+      "record_type": "task_package",
+      "identifier": "PKG-BATCH-001",
+      "message": "任务包编号重复",
+      "errors": ["任务包编号 'PKG-BATCH-001' 已存在或在本次导入中重复"]
+    }
+  ]
+}
+```
+
+### 10. 批量导出说明
+
+导出数据包含：
+- **batch_no**: 原始导入批次号
+- **import_batch**: 完整的导入批次信息（批次号、来源类型、操作人、创建时间等）
+- **current_status**: 当前状态（draft/issued/synced/closed/active）
+- **reading_summary**: 读数摘要（总读数、冲突总数、未解决冲突、已解决冲突）
+- **data**: 完整的实体数据
 
 ## 错误码说明
 
@@ -345,12 +495,20 @@ python main.py
 python test_main_flow.py
 python test_error_cases.py
 python test_restart_recovery.py
+python test_batch_management.py
 ```
 
 测试脚本将自动验证：
-1. 主链路：创建模板 → 生成任务包 → 发放 → 上传读数 → 解决冲突 → 同步 → 关闭 → 导出报告
-2. 异常场景：未知包编号上传、重复提交不同读数、未解决冲突就关闭
-3. 重启恢复：上传数据后重启服务，验证数据完整性
+1. **主链路** (`test_main_flow.py`)：创建模板 → 生成任务包 → 发放 → 上传读数 → 解决冲突 → 同步 → 关闭 → 导出报告
+2. **异常场景** (`test_error_cases.py`)：未知包编号上传、重复提交不同读数、未解决冲突就关闭
+3. **重启恢复** (`test_restart_recovery.py`)：上传数据后重启服务，验证数据完整性
+4. **批量管理** (`test_batch_management.py`)：
+   - 成功批量导入（JSON和CSV）
+   - 重复数据失败不污染库
+   - 发布前校验逻辑
+   - 发布和撤回权限验证
+   - 重启后导出仍一致
+   - 审计日志按操作人和批次查询
 
 ## 最小管理说明
 
